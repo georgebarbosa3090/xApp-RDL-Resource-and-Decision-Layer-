@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "MEMGRAPH_HOST": { "type": "string", "default": "localhost" },
+    "MEMGRAPH_PORT": { "type": "integer", "default": 7687 },
+    "PROMETHEUS_PORT": { "type": "integer", "default": 8081 },
+    "MARL_ALGORITHM": { "type": "string", "default": "MAPPO" },
+    "LOG_LEVEL": { "type": "string", "default": "INFO" }
+  }
+}
