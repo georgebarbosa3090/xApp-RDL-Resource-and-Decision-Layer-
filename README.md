@@ -2,7 +2,7 @@
 
 ## Visão Geral
 
-Desenvolvimento da **xApp RDL (Resource and Decision Layer)**, um orquestrador cognitivo para redes O-RAN que monitora múltiplas xApps, detecta conflitos diretos e indiretos, e os resolve via aprendizado por reforço multiagente (MARL). O projeto é baseada no framework **xDevSM** e roda no OSC Near-RT RIC.
+Desenvolvimento da **xApp RDL (Resource and Decision Layer)**, um orquestrador cognitivo para redes O-RAN que monitora múltiplas xApps, detecta conflitos diretos e indiretos, e os resolve via aprendizado por reforço multiagente (MARL). O projeto é baseada no Python xApp Framework do OSC.
 
 ---
 
