@@ -1,4 +1,4 @@
-# xApp RDL — Plano de Implementação
+# xApp RDL — Deployment
 
 ## Visão Geral
 
