@@ -5,7 +5,7 @@
   "txMessages": ["RIC_SUBSCRIPTION_REQUEST", "RIC_CONTROL_REQUEST"],
   "policies": [],
   "rmr": {
-    "rxMessages": [12050, 12011, 12012],
+    "rxMessages": [12050, 12011, 12012, 30000],
     "txMessages": [12010, 12040],
     "maxSize": 2072,
     "numWorkers": 1
