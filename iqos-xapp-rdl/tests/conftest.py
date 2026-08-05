@@ -1,6 +1,6 @@
 import pytest
 from src.conflict_types import XAppAction, KPMReport
-from src.perception_agent import PerceptionAgent
+from src.agents.perception_agent import PerceptionAgent
 
 @pytest.fixture
 def perception_agent():

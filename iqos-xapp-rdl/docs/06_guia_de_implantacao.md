@@ -1,38 +1,39 @@
 # Guia de Implantação e Execução
 
-O projeto xApp RDL (Resource and Decision Layer) foi empacotado para ser executado como um contêiner no ecossistema do OSC Near-RT RIC, mas também para rodar com Mocks e bancos de dados locais durante o desenvolvimento.
+O projeto xApp RDL foi refatorado para ter empacotamento determinístico, sem rodar como usuário root.
 
-## Variáveis de Ambiente Críticas
-A classe `RDLxApp` ajusta seu comportamento com base nas variáveis presentes na execução.
-- `USE_FAKE_SDL`: (Default: True). O Shared Data Layer real do OSC Near-RT RIC usa instâncias de Redis remotas. Ao deixar em `True`, ativamos o mock de dicionário Python do `ricxappframe`, poupando a configuração pesada do Redis localmente.
+## 1. O Dockerfile (Multi-stage Build)
+O container é construído em duas etapas (*Multi-stage*) para reduzir a imagem final.
+1. Na primeira etapa, compilamos as dependências pesadas (`wheels`) num ambiente que contém o GCC.
+2. Na segunda etapa, jogamos fora o lixo de compilação. Criamos um usuário Linux chamado `xapp` (ID 1000, não-root) que rodará a aplicação de forma segura e sem permissões de administrador. A aplicação recebe o `PYTHONPATH=/app`.
 
-## Configuração `configs/xapp_descriptor.json`
-Toda xApp no ecossistema da *O-RAN Software Community (OSC)* deve estar empacotada com um descritor. É um arquivo JSON que define a "identidade" da aplicação perante a rede, suas métricas (Prometheus) e portas abertas.
-Nele, você encontrará as portas:
-- `8080` (HTTP) - Porta padrão de saúde (healthcheck)
-- `8081` (Prometheus) - Porta das nossas métricas KPM e de Conflitos
-- `4560` (RMR) - Porta de entrada de dados
+Para construí-lo:
+```bash
+make build
+```
 
-## Executando com Docker Compose (Local)
-Para testar a xApp sem um RIC real e rodar o nosso Banco de Grafos, utilize o Docker. Nós escrevemos o `docker-compose.yml` que sobe o servidor gráfico do **Memgraph** junto com a nossa xApp.
+## 2. Variáveis de Ambiente e Healthchecks
+A RDL usa as seguintes variáveis inseridas no arquivo `deployment.yaml`:
+- `USE_FAKE_SDL`: Se verdadeiro, mocka o Redis. Se for para a rede real, deve ser `false`.
+- `RMR_SEED_RT`: Caminho injetado apontando para as rotas RMR geradas.
 
-**Passo a passo:**
-1. Tenha o `Docker Desktop` instalado no Windows/Mac, ou `docker-compose` no Linux.
-2. Abra o terminal na pasta raiz do projeto.
-3. Crie a imagem (Build):
-   ```bash
-   cd docker
-   docker-compose build
-   ```
-4. Suba o ambiente (Up):
-   ```bash
-   docker-compose up
-   ```
+**Kubernetes Probes:**
+Nós expomos a porta `8080` (HTTP) para testes vitais do Kubernetes Kubelet:
+- **LivenessProbe** pinga o `/health`. Se não responder UP, o Kubernetes mata o pod.
+- **ReadinessProbe** pinga o `/ready`. Ele só responde UP se a configuração centralizada for válida, RMR estiver iniciado e o SDL estiver conectado. Senão, ele barra a entrada de requisições E2.
 
-A xApp vai começar a cuspir *Logs* coloridos do `structlog` informando que está ouvindo a porta RMR e conectada ao Memgraph (host: `memgraph` na porta `7687`).
+## 3. Implantação via dms_cli
+Você não usa o `kubectl apply` diretamente para enviar a xApp para a OSC. O fluxo oficial de produção é:
 
-## Implantando no OSC Near-RT RIC (Produção)
-Para implantação real (Ex: no Release J da OSC ou no FlexRIC):
-1. Você envia o contêiner gerado pelo Dockerfile para o seu Docker Hub ou Harbor (Registro de contêineres). Ex: `muriloavlis/iqos-xapp:latest`.
-2. Você utiliza a ferramenta CLI de gerência do RIC (`dms_cli` do *Deployment Management Service*) para "onboardar" a xApp, enviando para ela o nosso `configs/xapp_descriptor.json`.
-3. O Kubernetes interno do RIC irá baixar o contêiner e orquestrar as ligações de rede internas, criando o pod na porta 4560 (RMR) de forma invisível.
+```bash
+# 1. Enviar o pacote descriptor para validação do AppMgr
+make onboard
+
+# 2. Requerer que o RIC busque a imagem e crie o Deploy/SVC
+make install
+
+# 3. Observar status
+make status
+```
+
+Se desejar subir de forma avulsa para testar rede (bypassing the AppMgr temporariamente), temos os manifestos de base presentes em `deploy/kubernetes/`.

@@ -1,4 +1,4 @@
-from src.perception_agent import PerceptionAgent
+from src.agents.perception_agent import PerceptionAgent
 from src.conflict_types import ConflictType
 
 def test_direct_conflict(perception_agent, action_qos, action_energy):

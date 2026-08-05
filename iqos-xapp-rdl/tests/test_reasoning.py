@@ -1,10 +1,10 @@
 import pytest
 from src.conflict_types import XAppAction, ConflictEvent, ConflictType, ConflictSeverity
-from src.memory_module import MemoryModule
-from src.reasoning_agent import ReasoningAgent
+from src.infrastructure.sdl_repository import SdlRepository
+from src.agents.reasoning_agent import ReasoningAgent
 
 def test_static_priority_resolution():
-    memory = MemoryModule()
+    memory = SdlRepository()
     reasoning = ReasoningAgent(memory, config={})
     
     action1 = XAppAction(xapp_id="qos_xapp", node_id="gnb_01", parameter="PRB_QUOTA", value=80, priority=100)
@@ -27,7 +27,7 @@ def test_static_priority_resolution():
     assert resolution.strategy_used.name == "PRIORITY_TABLE"
 
 def test_marl_fallback_for_indirect():
-    memory = MemoryModule()
+    memory = SdlRepository()
     reasoning = ReasoningAgent(memory, config={})
     
     action1 = XAppAction(xapp_id="qos_xapp", node_id="gnb_01", parameter="SCHEDULER_WEIGHT", value=5)

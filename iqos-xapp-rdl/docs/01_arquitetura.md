@@ -1,55 +1,40 @@
 # Arquitetura Geral da RDL
 
-A **xApp RDL** é construída em **Python** utilizando a biblioteca oficial `ricxappframe`, que abstrai as complexidades de comunicação do RIC.
+A **xApp RDL** é construída em **Python** e utiliza Domain-Driven Design (DDD). Isso significa que separamos "como pensamos na solução de conflito" (Domínio e Agentes) de "como falamos com a rede" (Infraestrutura e E2).
 
 ## Visão Macro
 
-A xApp atua como um "Homem no Meio" (Man-in-the-middle) inteligente.
-1. **Ouvir a Rede:** Ela assina as métricas da estação rádio-base (srsRAN gNB) usando o protocolo **E2SM-KPM**.
-2. **Ouvir as outras xApps:** Ela intercepta intenções de mudança feitas por outras aplicações.
-3. **Pensar:** Ela processa essas informações internamente usando grafos e Inteligência Artificial.
-4. **Agir:** Ela despacha o comando final e otimizado de volta para a rádio-base usando o protocolo **E2SM-RC**.
+A xApp atua como um Orquestrador (Man-in-the-middle).
+1. **Ouvir a Rede (Infraestrutura e E2):** O `E2NodeDiscoveryService` localiza as antenas. O `SubscriptionManager` assina as métricas da estação rádio-base (srsRAN gNB). As mensagens chegam via protocolo **E2SM-KPM**.
+2. **Ouvir as outras xApps (Coordenação):** Interceptamos intenções de mudança (`RDL_ACTION_PROPOSAL`) na rede RMR.
+3. **Pensar (Agentes e Domínio):** O `PerceptionAgent` monta um grafo da situação. O `ReasoningAgent` escolhe a melhor xApp (via PPO/MAPPO). O `RefinementAgent` age como *Safety Guard*.
+4. **Agir (E2 e Coordenação):** A ação escolhida é adaptada para `E2SM-RC` pelo `rc_encoder.py` e enviada pelo `ControlDispatcher`.
 
 ---
 
 ## O Ciclo Fechado (Closed Loop)
-Um "Ciclo Fechado" significa que o sistema observa, decide e atua de forma contínua, sem intervenção humana. Na RDL, esse fluxo funciona da seguinte maneira:
+Um "Ciclo Fechado" O-RAN funciona de forma contínua:
 
 1. **RIC_INDICATION (Coleta):**
-   - Mensagens da rede chegam via barramento de mensagens (RMR).
-   - O payload é um dado binário altamente compactado (ASN.1 APER).
-   - O `asn1_decoder.py` o transforma em dados legíveis (ex: Megabits por segundo, atraso, PRBs usados).
-   - O **PerceptionAgent** atualiza o "estado da rede".
-
+   - O payload (ASN.1 APER) chega do Near-RT RIC.
+   - O `e2ap_decoder.py` abre o envelope. O `kpm_decoder.py` traduz em medições (`KpmMeasurement`).
+   
 2. **RDL_ACTION_PROPOSAL (Proposta):**
-   - Outra xApp (ex: QoS) envia uma proposta de ação para a RDL via RMR.
-   - O **PerceptionAgent** verifica: "Essa ação conflita com o que a xApp de Energia acabou de pedir?"
-   - Se houver conflito (direto ou indireto), um `ConflictEvent` é gerado.
+   - Uma xApp parceira envia uma proposta (`proposals.py`).
+   - Geramos um `ConflictEvent` se ela bater de frente com a intenção atual.
 
-3. **Resolução (Raciocínio):**
-   - O **ReasoningAgent** assume. Ele verifica regras rígidas (Prioridade) ou aciona a IA (MAPPO) para decidir qual das xApps deve "vencer" a disputa.
+3. **Resolução e Validação:**
+   - As `DecisionStrategy` entram em cena.
+   - A decisão passa pelo crivo do limite de oscilação do `RefinementAgent`.
 
-4. **Validação (Refinamento):**
-   - O **RefinementAgent** age como o último guarda de segurança. Ele garante que a ação decidida pela IA não está fora dos limites de segurança aceitáveis para a rede.
-
-5. **RIC_CONTROL_REQUEST (Atuação):**
-   - A decisão validada é reempacotada.
-   - A RDL envia o comando final via RMR de volta para o RIC, que o roteia para a antena.
+4. **RIC_CONTROL_REQUEST (Atuação):**
+   - Enviamos e esperamos o `RIC_CONTROL_ACK` do E2 Node (Antena).
+   - O sucesso (ou a `RIC_CONTROL_FAILURE`) são correlacionados e persistidos via SDL (`sdl_repository.py`).
 
 ---
 
-## Persistência e Memória (SDL e Memgraph)
-
-O Near-RT RIC exige que xApps sejam do tipo "Stateless" (sem estado), ou seja, se a xApp reiniciar, ela não deve perder suas memórias.
-
-- **SDL (Shared Data Layer):** É o banco de dados Redis padrão do RIC. A RDL usa o SDL para salvar seus estados básicos usando a flag do `ricxappframe`.
-- **Knowledge Graph (Memgraph):** Para armazenar relacionamentos complexos de conflitos (ex: "A Ação X da xApp Y sempre afeta negativamente o KPI Z"), nós criamos o `MemoryModule`. Ele utiliza **Memgraph** (um banco de dados focado em grafos, rápido e compatível com C/C++) e **NetworkX** para buscas rápidas em memória.
+## Persistência e Memória (SDL)
+O Near-RT RIC exige que xApps sejam "Stateless". Por isso, o módulo `sdl_repository.py` escreve os IDs das decisões, propostas, subscrições e estado dos nós diretamente no banco compartilhado Redis O-RAN (utilizando o *Namespace* configurado no json).
 
 ## Métricas e Observabilidade
-
-Como sabemos se a xApp está indo bem?
-Usamos o **Prometheus**. A classe `metrics_server.py` sobe um pequeno servidor HTTP na porta `8081`. 
-Lá, painéis como o Grafana podem ler informações como:
-- Quantos conflitos foram detectados.
-- Quanto tempo (latência) a IA levou para decidir.
-- Quantas ações foram negadas por violarem as regras de segurança.
+Tudo é monitorado. O `health_server.py` diz ao Kubernetes que o contêiner está `UP`. O `metrics.py` varre as operações e incrementa contadores Prometheus sob as nomenclaturas exatas padronizadas pela O-RAN (ex: `rdl_control_requests_total`).

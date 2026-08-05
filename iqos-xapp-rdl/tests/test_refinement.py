@@ -1,10 +1,10 @@
 import pytest
 from src.conflict_types import XAppAction, ConflictEvent, ConflictType, ConflictSeverity, ResolutionAction, ResolutionStrategy
-from src.memory_module import MemoryModule
-from src.refinement_agent import RefinementAgent
+from src.infrastructure.sdl_repository import SdlRepository
+from src.agents.refinement_agent import RefinementAgent
 
 def test_validation_ranges():
-    memory = MemoryModule()
+    memory = SdlRepository()
     refinement = RefinementAgent(memory)
     
     # Ação com PRB_QUOTA dentro do limite (0 a 100)
@@ -24,7 +24,7 @@ def test_validation_ranges():
     assert "fora do limite" in reason
 
 def test_formal_validation_critical_conflict():
-    memory = MemoryModule()
+    memory = SdlRepository()
     refinement = RefinementAgent(memory)
     
     # Simula um conflito CRÍTICO que deve passar pela checagem formal

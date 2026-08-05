@@ -5,13 +5,13 @@ import os
 from typing import Dict, Any
 
 from ricxappframe.xapp_frame import Xapp
-from src.utils import setup_logger, now_ts
-from src.memory_module import MemoryModule
-from src.perception_agent import PerceptionAgent
-from src.reasoning_agent import ReasoningAgent
-from src.refinement_agent import RefinementAgent
+from src.observability.logging import setup_logger, now_ts
+from src.infrastructure.sdl_repository import SdlRepository
+from src.agents.perception_agent import PerceptionAgent
+from src.agents.reasoning_agent import ReasoningAgent
+from src.agents.refinement_agent import RefinementAgent
 from src.metrics_server import MetricsServer
-from src.asn1_decoder import E2SMKPMDecoder
+from src.e2.kpm_decoder import KpmDecoder
 from src.conflict_types import XAppAction, KPMReport, ConflictSeverity
 
 logger = setup_logger("rdl_xapp")
@@ -25,12 +25,12 @@ RDL_ACTION_PROPOSAL = 30000
 
 class RDLxApp:
     def __init__(self):
-        self.memory = MemoryModule()
+        self.memory = SdlRepository()
         self.perception = PerceptionAgent()
         self.reasoning = ReasoningAgent(self.memory, config={})
         self.refinement = RefinementAgent(self.memory)
         self.metrics = MetricsServer(port=8081)
-        self.asn1_decoder = E2SMKPMDecoder()
+        self.asn1_decoder = KpmDecoder()
         
         use_fake_sdl = os.getenv("USE_FAKE_SDL", "True").lower() in ("true", "1", "yes")
         

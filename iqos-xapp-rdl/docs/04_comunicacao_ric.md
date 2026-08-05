@@ -1,29 +1,21 @@
 # Comunicação com o OSC Near-RT RIC
 
-Este documento aborda a camada de "tradução e envio" de dados entre a nossa xApp, desenvolvida em Python, e os componentes base (escritos geralmente em C++) da O-RAN Alliance.
+Este documento aborda a camada de E2 e Infraestrutura que liga a RDL aos canos do O-RAN. Todos os módulos dessa casca estão isolados nos diretórios `src/e2/` e `src/infrastructure/`.
 
-## O Framework: `ricxappframe`
-A biblioteca `ricxappframe` simplifica a conexão da RDL com a arquitetura padrão.
-Ao invés de programarmos *sockets UDP/TCP* do zero, configuramos a classe `Xapp`, que abstrai todo o **RMR** (RIC Message Router).
+## 1. Descoberta e Subscrição
+Diferente da versão primária da RDL que escutava tudo de forma passiva, a versão Zero to Hero implementa um fluxo ativo O-RAN:
+- `e2_manager_client.py`: Usa requisições REST GET em `/v1/nodeb/states` para descobrir se existem E2 Nodes conectados. Ele ignora antenas desconectadas e mapeia os `RANFunctionID`.
+- `subscription_manager.py`: Com o Node descoberto, a RDL envia um `RIC_SUBSCRIPTION_REQUEST` forjado na API do SubMgr para assinar oficialmente a telemetria KPM, fornecendo o "Event Trigger" correto.
 
-## 1. O Protocolo e a Carga: ASN.1 (APER)
-O-RAN adota o formato **ASN.1** (Abstract Syntax Notation One) para envio de dados, compactado usando a regra APER (Aligned Packed Encoding Rules).
-Isso significa que, se interceptarmos os dados, veremos apenas lixo binário.
-A RDL usa o módulo `asn1_decoder.py` baseado na biblioteca open-source **PyCrate** para converter esses bytes compactados de volta em campos nomeados legíveis no padrão Service Models (E2SM).
+## 2. Decodificação ASN.1
+A rede de Rádio utiliza ASN.1 APER (compactado em hexadecimal). Se olharmos cruamente, é lixo binário.
+O processo de unpack foi estritamente fatiado:
+- `e2ap_decoder.py`: Descasca a cebola externa. Extrai os bytes brutos referentes ao `RICindicationHeader` e ao `RICindicationMessage`. Ele joga fora lixo indesejado do envelope `E2AP`.
+- `kpm_decoder.py`: Pega os bytes já filtrados e traduz as medições para as variáveis legíveis `KpmMeasurement` (DRB.UEThpDl, etc).
+  - **Aviso:** Se o RDL estiver operando em modo produção (`RDL_MODE=production`), não existem simulações (Mocks). Falhar a conversão ASN.1 gera erro instantâneo e log, sem fabricar "pacotes fake".
 
-## 2. RMR: Routing Manager e Mensagens
-Toda mensagem RMR precisa de um ID numérico para o sistema saber o que fazer com ela. Estes estão definidos no arquivo `configs/xapp_descriptor.json`.
-
-- **MENSAGENS RX (O que nós ouvimos - Entradas):**
-  - `12050 (RIC_INDICATION)`: O srsRAN enviou as KPMs (relatórios de telemetria da antena).
-  - `30000 (RDL_ACTION_PROPOSAL)`: (ID customizado) Uma outra xApp quer nos sugerir que modifiquemos algo na rede.
-  - `12011 (RIC_CONTROL_ACK)`: A rede aceitou nossa ação com sucesso.
-  - `12012 (RIC_CONTROL_FAILURE)`: A rede rejeitou nossa ação.
-
-- **MENSAGENS TX (O que nós falamos - Saídas):**
-  - `12010 (RIC_CONTROL_REQUEST)`: A RDL exige que a rádio-base altere algum comportamento (ex: Modifique a Potência).
-
-## 3. O Fluxo de Controle Real
-No arquivo `rdl_xapp.py`, observe o método `_send_control`.
-Ele transforma nossa intenção de alteração e empurra os pacotes para o framework através do comando `self.xapp.rmr_send()`.
-O RIC (especificamente o componente E2 Term) é o responsável por pegar esse pacote RMR e empurrá-lo para o protocolo **E2AP** da RAN.
+## 3. RMR: Routing Manager e Mensagens
+O roteamento ocorre na porta 4560, gerida pelo `ricxappframe`.
+As mensagens de entrada/saída (e seus Enums) trafegam via tabelas de rota dinâmicas inseridas na inicialização (veja `render_routes.sh`).
+- **Entradas (`rxMessages`):** `12050 (RIC_INDICATION)`, `12011 (RIC_CONTROL_ACK)`, `12012 (RIC_CONTROL_FAILURE)`, `30000 (RDL_ACTION_PROPOSAL)`.
+- **Saídas (`txMessages`):** `12010 (RIC_CONTROL_REQUEST)`.
