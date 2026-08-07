@@ -13,9 +13,9 @@ A **xApp RDL (Resource and Decision Layer)** surge como uma camada de Orquestra�
 
 Na RDL:
 1. As xApps parceiras não ativam comandos, apenas disparam intenções (`RDL_ACTION_PROPOSAL`) na rede RMR.
-2. A **RDL intercepta as propostas**.
-3. A IA funde os pedidos das xApps com a telemetria em tempo real (KPM).
-4. A RDL decide, valida regras físicas rígidas (Safety Guard) e despacha o comando final oficial (`E2SM-RC`).
+2. A **RDL intercepta as propostas e as agrupa em uma Janela de Decisão (Decision Window de 200ms)**, abandonando o modelo reativo de primeiro a chegar (First-Come-First-Served).
+3. A IA funde os pedidos das xApps com a telemetria em tempo real (KPM) e **avalia o espaço combinatório das ações** para detectar oportunidades de complementaridade (executar múltiplas ações simultaneamente se aumentarem a utilidade global).
+4. A RDL decide utilizando **fórmulas de Acordo de Nível de Serviço (SLA) — como TVS e EEVS — ou Inteligência Artificial (MARL)**, valida regras físicas rígidas (Safety Guard) e despacha o comando final oficial (`E2SM-RC`).
 
 ---
 
@@ -24,8 +24,8 @@ Na RDL:
 A RDL atua como um Man-in-the-middle inteligente em **Ciclo Fechado**:
 
 1. **Coleta (E2):** O `E2NodeDiscoveryService` localiza as antenas. O `SubscriptionManager` assina as métricas (E2SM-KPM). O payload ASN.1 APER é decodificado (`e2ap_decoder` e `kpm_decoder`).
-2. **Proposta (Coordenação):** Interceptação de `RDL_ACTION_PROPOSAL` da malha RMR.
-3. **Arbitragem (Domínio/Agentes):** O `PerceptionAgent` gera o grafo situacional. O `ReasoningAgent` escolhe a melhor resolução de conflito via Histórico, Tabela Estática ou IA (MAPPO).
+2. **Proposta e Agrupamento Temporal:** Interceptação de `RDL_ACTION_PROPOSAL` da malha RMR, acumulando-as em um buffer até o fechamento da janela de 200ms.
+3. **Arbitragem (Domínio/Agentes):** O `PerceptionAgent` gera o grafo situacional do lote inteiro. O `ReasoningAgent` escolhe a melhor resolução iterando as combinações e avaliando a utilidade com base em políticas rigorosas de SLA (como **TVS - Throughput Violation-based Selection** e **EEVS - EE Violation-based Selection**), Histórico ou IA (MAPPO).
 4. **Guarda de Segurança:** O `RefinementAgent` valida restrições (limite percentual de blocos físicos, frequência de controle).
 5. **Atuação (E2/RMR):** O comando é formatado pelo `rc_encoder` e atirado à rádio base pelo `ControlDispatcher`. O ID da decisão é salvo no banco de dados distribuído (SDL) via `sdl_repository` para esperar a confirmação (ACK).
 

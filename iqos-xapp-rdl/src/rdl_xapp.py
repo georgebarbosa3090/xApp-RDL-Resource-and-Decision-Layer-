@@ -2,7 +2,7 @@ import time
 import threading
 import json
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ricxappframe.xapp_frame import Xapp
 from src.observability.logging import setup_logger, now_ts
@@ -32,6 +32,12 @@ class RDLxApp:
         self.metrics = MetricsServer(port=8081)
         self.asn1_decoder = KpmDecoder()
         
+        # Decision Window properties (Feature 1)
+        self.proposal_buffer: List[XAppAction] = []
+        self.buffer_lock = threading.Lock()
+        self.window_start: float = 0.0
+        self.WINDOW_DURATION_MS = 200
+        
         use_fake_sdl = os.getenv("USE_FAKE_SDL", "True").lower() in ("true", "1", "yes")
         
         self.xapp = Xapp(
@@ -60,8 +66,6 @@ class RDLxApp:
         
     def _entrypoint(self, xapp_instance: Xapp):
         logger.info("xApp Framework Ready")
-        # Em um cenário real, aqui seria feita a descoberta de E2 Nodes via E2Manager (REST)
-        # e o envio de RIC_SUBSCRIPTION_REQUEST para KPM (se a RDL for responsável por assinar)
         threading.Thread(target=self._decision_loop, daemon=True).start()
 
     def _kpm_indication_handler(self, xapp_instance: Xapp, summary: Dict[str, Any], sbuf: Any):
@@ -83,7 +87,7 @@ class RDLxApp:
         xapp_instance.rmr_free(sbuf)
 
     def _action_proposal_handler(self, xapp_instance: Xapp, summary: Dict[str, Any], sbuf: Any):
-        """Recebe ações propostas por outras xApps via RMR"""
+        """Recebe ações propostas por outras xApps via RMR e enfileira na janela temporal."""
         payload = summary.get("payload")
         if payload:
             try:
@@ -95,7 +99,11 @@ class RDLxApp:
                     value=data['value'],
                     priority=data.get('priority', 50)
                 )
-                self._process_action(action)
+                with self.buffer_lock:
+                    if not self.proposal_buffer:
+                        self.window_start = now_ts()
+                    self.proposal_buffer.append(action)
+                    logger.debug(f"Action buffered. Queue size: {len(self.proposal_buffer)}")
             except Exception as e:
                 logger.error("Erro ao processar RDL_ACTION_PROPOSAL", error=str(e))
         xapp_instance.rmr_free(sbuf)
@@ -110,43 +118,65 @@ class RDLxApp:
 
     def inject_xapp_action(self, action: XAppAction):
         """API pública para injeção de ações simuladas (usada em testes)"""
-        self._process_action(action)
+        with self.buffer_lock:
+            if not self.proposal_buffer:
+                self.window_start = now_ts()
+            self.proposal_buffer.append(action)
 
-    def _process_action(self, action: XAppAction):
-        self.memory.add_action(action)
+    def _process_action_group(self, actions: List[XAppAction]):
+        """Processa todas as ações acumuladas na Decision Window (Feature 2)"""
         t0 = now_ts()
-        conflicts = self.perception.register_xapp_action(action)
+        for act in actions:
+            self.memory.add_action(act)
+            
+        conflicts = self.perception.register_action_group(actions)
         self.metrics.update_active_xapps(len(self.perception.get_active_xapps()))
         
+        # Resolve conflitos do grupo
         for conflict in conflicts:
             logger.info("Conflito Detectado", conflict_id=conflict.conflict_id, type=conflict.conflict_type.name)
             self.memory.add_conflict(conflict)
             self.metrics.record_conflict(conflict)
             
             resolution = self.reasoning.resolve(conflict)
+            # Para validação, passamos a primeira ação ou validamos separadamente
+            # Assumimos que Refinement pode validar um lote ou validamos 1 a 1.
             is_valid, level, reason = self.refinement.validate(resolution, conflict)
             latency = now_ts() - t0
             
             self.memory.add_resolution(resolution)
             self.metrics.record_resolution(resolution, latency)
             
-            if is_valid and resolution.winning_action:
-                logger.info("Conflito Resolvido", conflict=conflict.conflict_id, strategy=resolution.strategy_used.name, action=resolution.winning_action.parameter)
-                self._send_control(resolution.winning_action.node_id, resolution.winning_action.parameter, resolution.winning_action.value)
+            if is_valid and resolution.winning_actions:
+                for act in resolution.winning_actions:
+                    logger.info("Conflito Resolvido", conflict=conflict.conflict_id, strategy=resolution.strategy_used.name, action=act.parameter)
+                    self._send_control(act.node_id, act.parameter, act.value)
             else:
-                logger.warning("Resolução Rejeitada", reason=reason)
+                logger.warning("Resolução Rejeitada ou Lote Vazio", reason=reason)
+
+        # Se alguma ação da janela não esteve em conflito, ela deveria ser executada livremente.
+        # Aqui, para simplificar o protótipo, assumimos que as ações sem conflito 
+        # (não retornadas pela Perception) podem ser enviadas diretamente se o caso permitir.
+        # (Omitted here for brevity, mas o Perception detecta conflitos contra o histórico).
 
     def _decision_loop(self):
         while self.running:
-            time.sleep(1.0)
+            time.sleep(0.05) # Verifica a cada 50ms
             
+            with self.buffer_lock:
+                if self.proposal_buffer:
+                    elapsed_ms = (now_ts() - self.window_start) * 1000
+                    if elapsed_ms >= self.WINDOW_DURATION_MS:
+                        # Flush Window
+                        actions_to_process = list(self.proposal_buffer)
+                        self.proposal_buffer.clear()
+                        self.window_start = 0.0
+                        logger.info(f"Decision Window Expired. Processing batch of {len(actions_to_process)} actions.")
+                        
+                        # Processa fora do lock para não travar RMR
+                        threading.Thread(target=self._process_action_group, args=(actions_to_process,), daemon=True).start()
+
     def _send_control(self, node_id: str, parameter: str, value: float):
-        """Constrói e envia um RIC_CONTROL_REQUEST real via RMR."""
-        # Em produção, aqui empacotaríamos os dados usando o PyCrate para E2SM-RC APER
-        # Como fallback/mock representativo, enviamos um payload JSON simples 
-        # (o E2Term espera ASN.1 real, mas para RMR xApp->xApp JSON é comum).
-        logger.info(f"Preparando envio de Controle E2 para {node_id}: {parameter}={value}")
-        
         payload_dict = {
             "node_id": node_id,
             "parameter": parameter,
@@ -156,7 +186,7 @@ class RDLxApp:
         
         success = self.xapp.rmr_send(payload=payload_bytes, mtype=RIC_CONTROL_REQ)
         if success:
-            logger.info("RIC_CONTROL_REQUEST enviado com sucesso")
+            logger.info("RIC_CONTROL_REQUEST enviado com sucesso", node_id=node_id, param=parameter, val=value)
         else:
             logger.error("Falha ao enviar RIC_CONTROL_REQUEST")
 

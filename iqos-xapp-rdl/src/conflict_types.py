@@ -18,6 +18,8 @@ class ResolutionStrategy(Enum):
     PRIORITY_TABLE = "PRIORITY_TABLE"
     MARL_AGENT = "MARL_AGENT"
     ROLLBACK = "ROLLBACK"
+    TVS = "TVS"
+    EEVS = "EEVS"
 
 @dataclass
 class XAppAction:
@@ -42,7 +44,7 @@ class ConflictEvent:
 class ResolutionAction:
     conflict_id: str
     strategy_used: ResolutionStrategy
-    winning_action: Optional[XAppAction]
+    winning_actions: List[XAppAction]
     modified_value: Optional[float]
     confidence: float
     validation_level: int

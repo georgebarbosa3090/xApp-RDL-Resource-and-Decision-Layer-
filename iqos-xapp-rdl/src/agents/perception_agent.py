@@ -1,6 +1,7 @@
 from typing import Dict, List, Optional
 from src.conflict_types import XAppAction, ConflictEvent, ConflictType, ConflictSeverity, KPMReport
 import networkx as nx
+import itertools
 
 class PerceptionAgent:
     def __init__(self):
@@ -27,23 +28,55 @@ class PerceptionAgent:
                 active[action.xapp_id].append(action)
         return active
 
-    def register_xapp_action(self, action: XAppAction) -> List[ConflictEvent]:
+    def register_action_group(self, actions: List[XAppAction]) -> List[ConflictEvent]:
         conflicts = []
         
-        # 1. Verifica Conflito Direto
-        direct = self._detect_direct_conflict(action)
-        if direct:
-            conflicts.append(direct)
+        # Avalia combinações dentro do próprio grupo (Decision Window)
+        for i in range(len(actions)):
+            for j in range(i + 1, len(actions)):
+                action_a = actions[i]
+                action_b = actions[j]
+                
+                # Check Direct
+                if action_a.node_id == action_b.node_id and action_a.parameter == action_b.parameter and action_a.xapp_id != action_b.xapp_id:
+                    conflicts.append(ConflictEvent(
+                        conflict_type=ConflictType.DIRECT,
+                        severity=ConflictSeverity.HIGH,
+                        involved_xapps=[action_a, action_b],
+                        affected_kpis=self.kpi_dependency_graph.get(action_a.parameter, []),
+                        description=f"Direct conflict on parameter {action_a.parameter}"
+                    ))
+                
+                # Check Indirect
+                else:
+                    kpis_a = self.kpi_dependency_graph.get(action_a.parameter, [])
+                    kpis_b = self.kpi_dependency_graph.get(action_b.parameter, [])
+                    common_kpis = set(kpis_a).intersection(set(kpis_b))
+                    if common_kpis and action_a.node_id == action_b.node_id and action_a.xapp_id != action_b.xapp_id:
+                        conflicts.append(ConflictEvent(
+                            conflict_type=ConflictType.INDIRECT,
+                            severity=ConflictSeverity.MEDIUM,
+                            involved_xapps=[action_a, action_b],
+                            affected_kpis=list(common_kpis),
+                            description=f"Indirect conflict on KPIs {common_kpis}"
+                        ))
+
+        # Avalia cada ação contra o registry (ações em vigor que não expiraram)
+        for action in actions:
+            # Check Direct contra o histórico
+            direct = self._detect_direct_conflict(action)
+            if direct:
+                conflicts.append(direct)
+                
+            # Check Indirect contra o histórico
+            indirects = self._detect_indirect_conflict(action)
+            conflicts.extend(indirects)
             
-        # 2. Verifica Conflito Indireto
-        indirects = self._detect_indirect_conflict(action)
-        conflicts.extend(indirects)
-        
-        # Registra a nova ação
-        if action.node_id not in self._action_registry:
-            self._action_registry[action.node_id] = {}
-        self._action_registry[action.node_id][action.parameter] = action
-        
+            # Registra a nova ação
+            if action.node_id not in self._action_registry:
+                self._action_registry[action.node_id] = {}
+            self._action_registry[action.node_id][action.parameter] = action
+            
         return conflicts
 
     def _detect_direct_conflict(self, new_action: XAppAction) -> Optional[ConflictEvent]:
@@ -51,13 +84,12 @@ class PerceptionAgent:
             if new_action.parameter in self._action_registry[new_action.node_id]:
                 old_action = self._action_registry[new_action.node_id][new_action.parameter]
                 if old_action.xapp_id != new_action.xapp_id:
-                    # Conflito! Duas xApps diferentes mexendo no mesmo parâmetro
                     return ConflictEvent(
                         conflict_type=ConflictType.DIRECT,
                         severity=ConflictSeverity.HIGH,
                         involved_xapps=[old_action, new_action],
                         affected_kpis=self.kpi_dependency_graph.get(new_action.parameter, []),
-                        description=f"Direct conflict on parameter {new_action.parameter}"
+                        description=f"Direct conflict on parameter {new_action.parameter} against history"
                     )
         return None
 
@@ -81,6 +113,6 @@ class PerceptionAgent:
                     severity=ConflictSeverity.MEDIUM,
                     involved_xapps=[old_action, new_action],
                     affected_kpis=list(common_kpis),
-                    description=f"Indirect conflict on KPIs {common_kpis} via params {param} and {new_action.parameter}"
+                    description=f"Indirect conflict on KPIs {common_kpis} via params {param} and {new_action.parameter} against history"
                 ))
         return conflicts

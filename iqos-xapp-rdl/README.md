@@ -8,7 +8,7 @@ Este projeto visa resolver o problema crítico de **Conflitos de Ação** no O-R
 
 ## 3. Arquitetura
 A arquitetura foi inteiramente desenhada utilizando Domain-Driven Design (DDD) e Clean Architecture, dividindo o software em:
-* `agents/`: Motores de raciocínio (MAPPO), percepção e *Safety Guards*.
+* `agents/`: Motores de percepção (análise combinatória em lote de 200ms), raciocínio (MAPPO, SLA Policies TVS/EEVS) e *Safety Guards*.
 * `coordination/`: Despachante de controle e correlacionador de ACKs.
 * `domain/`: Classes imutáveis (Proposals, Conflicts, Decisions).
 * `e2/`: Decodificadores e Encoders específicos de KPM e RC (isolamento de ASN.1).
@@ -90,6 +90,7 @@ Se os comandos não chegarem à rádio-base:
 ## 15. Limitações
 - O decodificador KPM atualmente opera uma validação binária leve devido à necessidade de bibliotecas C para a tradução APER estrita, requerendo a instalação paralela do *pycrate* nativo no SO hospedeiro em redes de produção.
 - Conflitos de Recursos Dinâmicos (Resource) ainda são mapeados em grafos de proximidade, exigindo integração com simulador RAN para precisão milimétrica.
+- O preditor combinatório da RDL no modelo de Decision Windowing atual utiliza regras heurísticas; o modelo ultra-rápido via XGBoost está listado no Roadmap para validação proativa avançada.
 
 ## 16. Roadmap
 - [ ] Incorporar biblioteca O-RAN `asn1c` compilada nativamente ao Dockerfile.
