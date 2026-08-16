@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional
+from collections import deque
+import math
 from src.conflict_types import XAppAction, ConflictEvent, ConflictType, ConflictSeverity, KPMReport
 import networkx as nx
 
@@ -14,9 +16,49 @@ class PerceptionAgent:
         # Registro das últimas ações: node_id -> parameter -> XAppAction
         self._action_registry: Dict[str, Dict[str, XAppAction]] = {}
         self.latest_kpm: Optional[KPMReport] = None
+        
+        # Monitoramento Adaptativo (Baseado em Matheus Dória, 2025)
+        self.kpi_history = deque(maxlen=20)
+        self.adaptive_threshold = 1.51  # Limiar θ calibrado na Fase KEP
+        self.current_sampling_interval_ms = 1  # 1ms (Alto risco) ou 2ms (Baixo risco)
 
     def update_kpm_report(self, report: KPMReport):
         self.latest_kpm = report
+        
+        # Adaptive Monitoring: Armazena histórico para análise de risco na Fase KEP
+        # Utilizando o Throughput de Downlink (drb_thp_dl) como proxy para variabilidade
+        kpi_value = report.drb_thp_dl
+        self.kpi_history.append(kpi_value)
+        
+        self._evaluate_monitoring_risk()
+
+    def _evaluate_monitoring_risk(self):
+        """
+        Fases KEP (KPI Evaluation Phase) e SDP (Sampling Time Definition Phase).
+        Ajusta a frequência de amostragem dinamicamente para economizar recursos (CPU/Energia).
+        """
+        if len(self.kpi_history) < 2:
+            return
+            
+        # Calcula vetor de diferenças consecutivas (delta)
+        history = list(self.kpi_history)
+        deltas = [abs(history[i+1] - history[i]) for i in range(len(history)-1)]
+        
+        # Desvio Padrão dos deltas (σΔ)
+        mean_delta = sum(deltas) / len(deltas)
+        variance = sum((d - mean_delta)**2 for d in deltas) / len(deltas)
+        sigma_delta = math.sqrt(variance)
+        
+        # Define o novo tempo de amostragem (Fase SDP)
+        if sigma_delta < self.adaptive_threshold:
+            # Risco Baixo -> Coleta mais esparsa para economizar CPU
+            self.current_sampling_interval_ms = 2
+        else:
+            # Risco Alto -> Coleta detalhada para evitar perda de informações de conflito
+            self.current_sampling_interval_ms = 1
+            
+        # Na integração final, este valor é usado para reenviar um E2 Subscription Request
+        # alterando a frequência de reporte do E2 Node (via RIC).
 
     def get_active_xapps(self) -> Dict[str, List[XAppAction]]:
         active = {}

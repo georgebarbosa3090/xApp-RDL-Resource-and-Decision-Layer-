@@ -1,4 +1,6 @@
 from typing import Dict, List, Optional
+from collections import deque
+import math
 from src.conflict_types import XAppAction, ConflictEvent, ConflictType, ConflictSeverity, KPMReport
 import networkx as nx
 import itertools
@@ -15,9 +17,34 @@ class PerceptionAgent:
         # Registro das últimas ações: node_id -> parameter -> XAppAction
         self._action_registry: Dict[str, Dict[str, XAppAction]] = {}
         self.latest_kpm: Optional[KPMReport] = None
+        
+        # Monitoramento Adaptativo
+        self.kpi_history = deque(maxlen=20)
+        self.adaptive_threshold = 1.51
+        self.current_sampling_interval_ms = 1
 
     def update_kpm_report(self, report: KPMReport):
         self.latest_kpm = report
+        
+        kpi_value = report.drb_thp_dl
+        self.kpi_history.append(kpi_value)
+        self._evaluate_monitoring_risk()
+
+    def _evaluate_monitoring_risk(self):
+        if len(self.kpi_history) < 2:
+            return
+            
+        history = list(self.kpi_history)
+        deltas = [abs(history[i+1] - history[i]) for i in range(len(history)-1)]
+        
+        mean_delta = sum(deltas) / len(deltas)
+        variance = sum((d - mean_delta)**2 for d in deltas) / len(deltas)
+        sigma_delta = math.sqrt(variance)
+        
+        if sigma_delta < self.adaptive_threshold:
+            self.current_sampling_interval_ms = 2
+        else:
+            self.current_sampling_interval_ms = 1
 
     def get_active_xapps(self) -> Dict[str, List[XAppAction]]:
         active = {}
