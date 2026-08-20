@@ -7,7 +7,7 @@
 
 ## 1. Introdução e Metodologia
 
-Na arquitetura **O-RAN (Open Radio Access Network)**, as xApps (aplicações do Near-RT RIC) operam de forma isolada e simultânea para gerenciar os nós de rádio. O problema intrínseco dessa arquitetura é o **Conflito de Controle**. O que acontece se uma `QoS-xApp` decide aumentar a potência e os recursos de rádio de uma célula simultaneamente a uma `Energy-Savings-xApp` que decide diminuí-los? A antena receberá requisições contraditórias (`RIC_CONTROL_REQUEST`), resultando em oscilação agressiva (*ping-pong effect*) e degradação de SLAs.
+Na arquitetura **O-RAN (Open Radio Access Network)**, as xApps (aplicações do Near-RT RIC) operam de forma isolada e simultânea para gerenciar os nós de rádio. O problema intrínseco dessa arquitetura é o **Conflito de Controle**. O que acontece se uma `QoS-xApp` decide aumentar a potência e os recursos de rádio de uma célula simultaneamente a uma `Energy-Savings-xApp` que decide diminuí-los? A antena receberá requisições contraditórias (*RIC_CONTROL_REQUEST*), resultando em oscilação agressiva (*ping-pong effect*) e degradação de SLAs.
 
 A **xApp RDL (Resource and Decision Layer)** surge como uma camada de Orquestração Cognitiva (via RDP) que se posiciona de forma agnóstica como um árbitro entre o Near-RT RIC e as demais xApps. A metodologia adota **Domain-Driven Design (DDD)** para separar a lógica de decisão da infraestrutura de telecomunicações.
 
