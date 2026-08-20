@@ -17,10 +17,11 @@ RUN pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels -r requirements.t
 # Stage 2: Final runtime image
 FROM python:3.10-slim
 
-# Install RMR library in runtime
+# Install RMR library and curl in runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     dpkg \
+    curl \
     && wget --content-disposition https://packagecloud.io/o-ran-sc/release/packages/debian/stretch/rmr_4.9.0_amd64.deb/download.deb \
     && dpkg -i rmr_4.9.0_amd64.deb \
     && rm -f rmr_4.9.0_amd64.deb \

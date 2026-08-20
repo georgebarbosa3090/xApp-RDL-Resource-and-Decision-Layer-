@@ -1,28 +1,72 @@
-from typing import Protocol
-from src.domain.proposals import Action
 from src.observability.logging import setup_logger
+from pycrate_asn1rt.asnobj_basic import INT, OCT_STR
+from pycrate_asn1rt.asnobj_construct import SEQ, SEQ_OF
+from pycrate_asn1rt.asnobj_str import PrintableString
 
-logger = setup_logger("ControlEncoder")
+logger = setup_logger("RCEncoder")
 
-class ControlAction:
-    def __init__(self, action: Action, target_node: str, target_cell: str):
-        self.action = action
-        self.target_node = target_node
-        self.target_cell = target_cell
+# Definição Estrutural Nativa ASN.1 (E2SM-RC v1)
+class E2SM_RC_ControlHeader(SEQ):
+    _cont = [
+        ('ricControlStyleType', INT()),
+        ('ricControlActionID', INT())
+    ]
 
-class ControlEncoder(Protocol):
-    def encode(self, action: ControlAction) -> bytes:
-        ...
+class E2SM_RC_ControlMessageItem(SEQ):
+    _cont = [
+        ('ranParameterID', INT()),
+        ('ranParameterName', PrintableString()),
+        ('ranParameterValue', INT())
+    ]
 
-class E2SMRCEncoder:
+class E2SM_RC_ControlMessage(SEQ):
+    _cont = [
+        ('ricControlActionParameters', SEQ_OF(val=E2SM_RC_ControlMessageItem()))
+    ]
+
+class RCEncoder:
     """
-    Codificador genérico para E2SM-RC.
-    Requisito RF-17 e preferência pelo Service Model E2SM-RC.
+    Construtor de payloads APER para a subcamada E2SM-RC (RAN Control).
+    Requisito RF-17.
     """
-    def encode(self, action: ControlAction) -> bytes:
-        logger.info(f"Codificando ação {action.action.type} para o nó {action.target_node} no padrão E2SM-RC.")
-        
-        # Em modo produção real, a biblioteca PyCrate (ou asn1c wrapper) 
-        # serializaria as estruturas E2AP RIC Control Request Header e Message.
-        # Retornamos bytes stubs.
-        return b'\x00\x01\x02\x03'
+    def __init__(self):
+        # Mapeia nomes lógicos para IDs da RAN
+        self.param_map = {
+            "PRB_QUOTA": 1,
+            "SCHEDULER_WEIGHT": 2,
+            "TX_POWER": 3
+        }
+
+    def encode_control_request(self, node_id: str, parameter: str, value: float) -> bytes:
+        """
+        Gera a string de bytes APER pura que o E2 Node espera.
+        """
+        try:
+            param_id = self.param_map.get(parameter, 99)
+            
+            # Constrói o Header
+            header = E2SM_RC_ControlHeader()
+            header.set_val({'ricControlStyleType': 1, 'ricControlActionID': 1})
+            header_aper = header.to_aper()
+
+            # Constrói a Message
+            msg = E2SM_RC_ControlMessage()
+            msg.set_val({'ricControlActionParameters': [
+                {
+                    'ranParameterID': param_id,
+                    'ranParameterName': parameter,
+                    'ranParameterValue': int(value)
+                }
+            ]})
+            msg_aper = msg.to_aper()
+            
+            # Retornamos as partes concatenadas ou como estrutura.
+            # RMR mtype 12010 espera JSON empacotado para o E2 Term, 
+            # ou o byte puro se a xApp fala APER nativo. 
+            # A RDLxApp no nosso framework envia JSON, mas com o header/msg encodados.
+            logger.debug(f"RC Control Encoded APER size: {len(msg_aper)} bytes")
+            return msg_aper
+
+        except Exception as e:
+            logger.error(f"Erro Crítico ao encodar E2SM-RC via APER: {e}")
+            raise

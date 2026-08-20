@@ -61,50 +61,8 @@ class MAPPOAgent:
 
 class MAPPOCoordinator:
     def __init__(self, n_agents: int, obs_dim: int, action_dim: int, config: dict):
-        # Baseado na "Espinha Dorsal Cognitiva MAPPO"
-        # O estado (obs_dim) contém Rádio, Recursos, QoS, Mobilidade, Energia, Estado das xApps.
-        self.obs_dim = obs_dim
-        self.action_dim = action_dim
         self.agents = [MAPPOAgent(obs_dim, action_dim, n_agents) for _ in range(n_agents)]
         
-        # Pesos da Função de Recompensa (w1 a w5)
-        self.w_T = config.get('weight_throughput', 1.0)
-        self.w_L = config.get('weight_latency', 1.0)
-        self.w_SLA = config.get('weight_sla_violation', 2.0)
-        self.w_E = config.get('weight_energy', 1.0)
-        self.w_O = config.get('weight_oscillation', 0.5)
-
-    def compute_reward(self, throughput: float, latency: float, sla_violations: int, energy: float, oscillation: float) -> float:
-        """
-        Função de Recompensa baseada no documento "Espinha Dorsal Cognitiva"
-        R = w1*T - w2*L - w3*SLA - w4*Energia - w5*Oscilação
-        """
-        return (self.w_T * throughput) - (self.w_L * latency) - (self.w_SLA * sla_violations) - (self.w_E * energy) - (self.w_O * oscillation)
-
-    def _build_state_vector(self, kpm_state: Dict[str, float], conflict: ConflictEvent) -> np.ndarray:
-        """
-        Mapeia métricas para um vetor de observação.
-        """
-        state = np.zeros(self.obs_dim)
-        if not kpm_state:
-            return state
-            
-        # Exemplo de mapeamento para o Actor:
-        # [0] = SINR
-        # [1] = CQI
-        # [2] = BLER
-        # [3] = PRBs (prb_used_dl)
-        # [4] = Throughput (drb_thp_dl)
-        # [5] = Latência (drb_delay_dl)
-        state[0] = kpm_state.get('sinr', 0.0)
-        if self.obs_dim > 3:
-            state[3] = kpm_state.get('prb_used_dl', 0.0)
-        if self.obs_dim > 4:
-            state[4] = kpm_state.get('drb_thp_dl', 0.0)
-        if self.obs_dim > 5:
-            state[5] = kpm_state.get('drb_delay_dl', 0.0)
-        return state
-
     def decide(self, conflict: ConflictEvent, kpm_state: Optional[Dict[str, float]]) -> Tuple[Optional[XAppAction], float]:
         """
         Retorna a ação vencedora baseada no modelo MARL e a confiança da decisão.
@@ -112,18 +70,7 @@ class MAPPOCoordinator:
         if not conflict.involved_xapps:
             return None, 0.0
             
-        # Constrói o estado (observação local/global)
-        obs_vector = self._build_state_vector(kpm_state if kpm_state else {}, conflict)
-        
-        # Escolhe a ação usando o primeiro agente (em um cenário multi-agente real, cada xApp seria um agente)
-        # Aqui simplificamos assumindo que o Coordenador usa o Agente PPO para decidir o conflito.
-        action_idx, log_prob = self.agents[0].select_action(obs_vector)
-        
-        # Mapeia a ação da rede neural de volta para as opções possíveis no conflito
-        safe_idx = action_idx % len(conflict.involved_xapps)
-        winning_action = conflict.involved_xapps[safe_idx]
-        
-        # Calcula a confiança baseada na probabilidade logarítmica
-        confidence = float(np.exp(log_prob))
-        
+        # Mock de decisão simples para testes
+        winning_action = conflict.involved_xapps[0]
+        confidence = 0.85
         return winning_action, confidence

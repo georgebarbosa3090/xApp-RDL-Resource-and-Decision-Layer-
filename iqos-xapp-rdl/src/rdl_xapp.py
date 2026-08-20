@@ -7,11 +7,13 @@ from typing import Dict, Any, List
 from ricxappframe.xapp_frame import Xapp
 from src.observability.logging import setup_logger, now_ts
 from src.infrastructure.sdl_repository import SdlRepository
+from src.infrastructure.memory_module import MemoryModule
 from src.agents.perception_agent import PerceptionAgent
 from src.agents.reasoning_agent import ReasoningAgent
 from src.agents.refinement_agent import RefinementAgent
 from src.metrics_server import MetricsServer
 from src.e2.kpm_decoder import KpmDecoder
+from src.e2.rc_encoder import RCEncoder
 from src.conflict_types import XAppAction, KPMReport, ConflictSeverity
 
 logger = setup_logger("rdl_xapp")
@@ -25,20 +27,25 @@ RDL_ACTION_PROPOSAL = 30000
 
 class RDLxApp:
     def __init__(self):
-        self.memory = SdlRepository()
+        use_fake_sdl = os.getenv("USE_FAKE_SDL", "True").lower() in ("true", "1", "yes")
+        
+        if use_fake_sdl:
+            self.memory = MemoryModule()
+        else:
+            self.memory = SdlRepository()
+            
         self.perception = PerceptionAgent()
         self.reasoning = ReasoningAgent(self.memory, config={})
         self.refinement = RefinementAgent(self.memory)
         self.metrics = MetricsServer(port=8081)
         self.asn1_decoder = KpmDecoder()
+        self.rc_encoder = RCEncoder()
         
         # Decision Window properties (Feature 1)
         self.proposal_buffer: List[XAppAction] = []
         self.buffer_lock = threading.Lock()
         self.window_start: float = 0.0
         self.WINDOW_DURATION_MS = 200
-        
-        use_fake_sdl = os.getenv("USE_FAKE_SDL", "True").lower() in ("true", "1", "yes")
         
         self.xapp = Xapp(
             entrypoint=self._entrypoint,
@@ -177,14 +184,23 @@ class RDLxApp:
                         threading.Thread(target=self._process_action_group, args=(actions_to_process,), daemon=True).start()
 
     def _send_control(self, node_id: str, parameter: str, value: float):
-        payload_dict = {
-            "node_id": node_id,
-            "parameter": parameter,
-            "value": value
-        }
-        payload_bytes = json.dumps(payload_dict).encode('utf-8')
-        
-        success = self.xapp.rmr_send(payload=payload_bytes, mtype=RIC_CONTROL_REQ)
+        try:
+            # Encodifica APER ASN.1 Nativo
+            aper_payload = self.rc_encoder.encode_control_request(node_id, parameter, value)
+            
+            # Formata para o dispatcher RMR do E2 Term
+            payload_dict = {
+                "node_id": node_id,
+                "parameter": parameter,
+                "value": value,
+                "aper_bytes": aper_payload.hex()
+            }
+            payload_bytes = json.dumps(payload_dict).encode('utf-8')
+            
+            success = self.xapp.rmr_send(payload=payload_bytes, mtype=RIC_CONTROL_REQ)
+        except Exception as e:
+            logger.error(f"Falha ao gerar APER Control: {e}")
+            success = False
         if success:
             logger.info("RIC_CONTROL_REQUEST enviado com sucesso", node_id=node_id, param=parameter, val=value)
         else:

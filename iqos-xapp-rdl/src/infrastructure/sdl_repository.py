@@ -1,17 +1,19 @@
 from typing import Dict, Any, Optional
 import json
+import time
 from src.observability.logging import setup_logger
 
 logger = setup_logger("SdlRepository")
 
 class SdlRepository:
-    def __init__(self, xapp_instance):
+    def __init__(self, xapp_instance=None):
         """
         Wrapper para o SDL (Shared Data Layer) do RIC.
         xapp_instance: instância da RDLxApp contendo a conexão sdl.
         """
         self.xapp = xapp_instance
         self.namespace = "iqos-xapp-rdl"
+        self._local_cache = []
 
     def _set(self, key: str, value: Any):
         try:
@@ -21,7 +23,10 @@ class SdlRepository:
             elif isinstance(value, str):
                 value = value.encode('utf-8')
             
-            self.xapp.sdl_set(self.namespace, key, value)
+            if self.xapp is not None:
+                self.xapp.sdl_set(self.namespace, key, value)
+            else:
+                logger.debug(f"[MOCK SDL] Set {key} = {value}")
         except Exception as e:
             logger.error(f"Falha ao persistir {key} no SDL: {e}")
 
@@ -62,3 +67,24 @@ class SdlRepository:
         if data and isinstance(data, dict):
             data["result"] = result
             self._set(f"control_results:{control_id}", data)
+
+    # Alias para compatibilidade com o MemoryModule legado
+    def add_action(self, action):
+        self._local_cache.append(action)
+        self.save_action_proposal(f"act_{time.time()}", {"parameter": action.parameter, "value": action.value})
+
+    def add_conflict(self, conflict):
+        self._local_cache.append(conflict)
+        self._set(f"conflict_{conflict.conflict_id}", {"type": conflict.conflict_type.name})
+
+    def add_resolution(self, resolution):
+        self._local_cache.append(resolution)
+        self.save_decision(f"res_{resolution.conflict_id}", {"strategy": resolution.strategy_used.name})
+
+    def get_similar_resolutions(self, conflict) -> list:
+        # Mock para busca histórica
+        return []
+
+    def get_recent_actions(self, n=50) -> list:
+        return self._local_cache[-n:]
+

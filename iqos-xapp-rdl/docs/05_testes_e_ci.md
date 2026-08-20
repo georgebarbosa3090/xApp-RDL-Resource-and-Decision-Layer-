@@ -3,7 +3,7 @@
 Como estipulado pelo padrão O-RAN Zero to Hero, o nível de cobertura global alvo é `>= 80%`.
 
 ## 1. Testes Automatizados com Pytest (`tests/`)
-Nós testamos as regras de negócio de forma agnóstica à rede (não rodamos a xApp completa conectada para testar o MAPPO, nós isolamos e a API RMR usando `unittest.mock`).
+Nós testamos as regras de negócio de forma agnóstica à rede (não rodamos a xApp completa conectada para testar o MAPPO, nós isolamos e "Mockamos" a API RMR usando `unittest.mock`).
 
 Para rodar (supondo ambiente Python local):
 ```bash
