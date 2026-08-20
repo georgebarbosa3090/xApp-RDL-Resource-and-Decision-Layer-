@@ -62,6 +62,3 @@ jobs:
         cd iqos-xapp-rdl
         docker build -t iqos-xapp-rdl:test -f docker/Dockerfile .
 ```
-
-## 3. Próximos Passos
-À medida que o ambiente de experimentação for movido para um servidor bare-metal dedicado ou cluster (ex: integração com o NORI no ns-3), novos *runners* self-hosted do GitHub Actions podem ser atrelados ao laboratório para rodar testes E2E (*End-to-End*) reais acoplados ao simulador durante a esteira.
