@@ -12,7 +12,7 @@ A rede de Rádio utiliza ASN.1 APER (compactado em hexadecimal). Se olharmos cru
 O processo de unpack foi estritamente fatiado:
 - `e2ap_decoder.py`: Descasca a cebola externa. Extrai os bytes brutos referentes ao `RICindicationHeader` e ao `RICindicationMessage`. Ele joga fora lixo indesejado do envelope `E2AP`.
 - `kpm_decoder.py`: Pega os bytes já filtrados e traduz as medições para as variáveis legíveis `KpmMeasurement` (DRB.UEThpDl, etc).
-  - **Aviso:** Se o RDL estiver operando em modo produção (`RDL_MODE=production`), não existem simulações (Mocks). Falhar a conversão ASN.1 gera erro instantâneo e log, sem fabricar "pacotes fake".
+  - **Aviso:** Se o RDL estiver operando em modo produção (`RDL_MODE=production`), não existem simulações. Falhar a conversão ASN.1 gera erro instantâneo e log, sem fabricar "pacotes fake".
 
 ## 3. RMR: Routing Manager e Mensagens
 O roteamento ocorre na porta 4560, gerida pelo `ricxappframe`.
