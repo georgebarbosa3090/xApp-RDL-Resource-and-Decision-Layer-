@@ -1,6 +1,6 @@
 # Documentação Oficial: Projeto xApp RDL (Resource and Decision Layer)
 
-**Versão:** 1.1.0 (Zero to Hero Refactoring)
+**Versão:** 1.1.0
 **Data:** 05/08/2026
 
 ---
